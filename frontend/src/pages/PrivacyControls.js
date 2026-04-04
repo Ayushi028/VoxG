@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../api'; // Backend connection
+import '../App.css';
 
 function PrivacyControls({ darkMode, toggleDarkMode }) {
   const navigate = useNavigate();
+  
+  // 🔥 REAL BACKEND LOGS + LOCAL SETTINGS
   const [settings, setSettings] = useState({
     dataCollection: true,
     callRecording: false,
@@ -10,9 +14,49 @@ function PrivacyControls({ darkMode, toggleDarkMode }) {
     locationTracking: false,
     anonymousAnalytics: true
   });
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [purging, setPurging] = useState(false);
+
+  // 🔥 LOAD LOGS FROM BACKEND
+  useEffect(() => {
+    loadLogs();
+    // Load settings from localStorage (persistent)
+    const saved = localStorage.getItem('privacySettings');
+    if (saved) setSettings(JSON.parse(saved));
+  }, []);
+
+  const loadLogs = async () => {
+    try {
+      const response = await api.logs.getAll();
+      setLogs(response.data.data || []);
+    } catch (error) {
+      console.log('No logs access');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleSetting = (key) => {
-    setSettings({...settings, [key]: !settings[key]});
+    const newSettings = { ...settings, [key]: !settings[key] };
+    setSettings(newSettings);
+    localStorage.setItem('privacySettings', JSON.stringify(newSettings)); // 🔥 PERSISTENT
+  };
+
+  // 🔥 REAL LOG PURGE FROM BACKEND
+  const purgeLogs = async () => {
+    if (window.confirm(`Permanently delete ${logs.length} call logs?`)) {
+      setPurging(true);
+      try {
+        await api.logs.purge();
+        setLogs([]);
+        alert(`✅ Privacy purge complete! ${logs.length} logs deleted.`);
+      } catch (error) {
+        alert('Purge failed - check login');
+      } finally {
+        setPurging(false);
+      }
+    }
   };
 
   return (
@@ -24,7 +68,6 @@ function PrivacyControls({ darkMode, toggleDarkMode }) {
         ← Back to Dashboard
       </button>
 
-      {/* Dark Mode Toggle */}
       <button 
         className={`dark-mode-toggle ${darkMode ? 'active' : ''}`}
         onClick={toggleDarkMode}
@@ -37,20 +80,32 @@ function PrivacyControls({ darkMode, toggleDarkMode }) {
         <div className="page-header">
           <span className="page-icon">🔒</span>
           <h1>Privacy Controls</h1>
+          <div className="log-count">📋 {logs.length} call logs stored</div>
         </div>
         
         <p className="page-description">
-          Manage how your data is collected and used. Your privacy is our priority.
+          Manage your data. <strong>Purge logs instantly</strong> from backend server.
         </p>
 
-        {/* Privacy Settings List */}
+        {/* 🔥 PURGE BUTTON - REAL BACKEND DELETE */}
+        <div className="purge-section">
+          <button 
+            className="purge-button"
+            onClick={purgeLogs}
+            disabled={purging || loading}
+          >
+            {purging ? '🗑️ Deleting...' : `🗑️ Clear All Logs (${logs.length})`}
+          </button>
+        </div>
+
+        {/* Your existing settings - now PERSISTENT */}
         <div className="settings-list">
           <div className={`setting-item ${darkMode ? 'dark-setting-item' : ''}`}>
             <div className="setting-info">
               <span className="setting-icon">📊</span>
               <div>
                 <h4>Data Collection</h4>
-                <p>Allow anonymous usage data to improve detection</p>
+                <p>Allow anonymous usage data</p>
               </div>
             </div>
             <button 
@@ -66,7 +121,7 @@ function PrivacyControls({ darkMode, toggleDarkMode }) {
               <span className="setting-icon">🎙️</span>
               <div>
                 <h4>Call Recording</h4>
-                <p>Record calls for spam analysis</p>
+                <p>Record calls for analysis</p>
               </div>
             </div>
             <button 
@@ -98,7 +153,7 @@ function PrivacyControls({ darkMode, toggleDarkMode }) {
               <span className="setting-icon">📍</span>
               <div>
                 <h4>Location Tracking</h4>
-                <p>Use location for regional spam patterns</p>
+                <p>Regional spam patterns</p>
               </div>
             </div>
             <button 
@@ -114,7 +169,7 @@ function PrivacyControls({ darkMode, toggleDarkMode }) {
               <span className="setting-icon">📈</span>
               <div>
                 <h4>Anonymous Analytics</h4>
-                <p>Help improve spam detection globally</p>
+                <p>Improve global detection</p>
               </div>
             </div>
             <button 
@@ -125,6 +180,18 @@ function PrivacyControls({ darkMode, toggleDarkMode }) {
             </button>
           </div>
         </div>
+
+        {/* 🔥 RECENT LOGS PREVIEW */}
+        {logs.length > 0 && (
+          <div className="recent-logs">
+            <h4>Recent Activity:</h4>
+            {logs.slice(-3).map(log => (
+              <div key={log.id} className={`log-preview ${log.analysis?.isSpam ? 'spam' : ''}`}>
+                {log.callerId} {log.analysis?.isSpam ? '🚨' : '✅'}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

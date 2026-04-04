@@ -1,37 +1,97 @@
+require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const keywordController = require('./controllers/keywords');
+const logController = require('./controllers/logs');
+const authController = require('./controllers/auth');
+const auth = require('./middleware/auth');
+const seedData = require('./utils/seed');
+const db = require('./utils/db');
 
 const app = express();
-const PORT = 5000;
 
-app.use(cors());
+// 🔥 PERFECT CORS CONFIG - WORKS WITH ALL BROWSERS
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(express.json());
 
-// MongoDB connection (no extra options needed in new versions)
-mongoose.connect('mongodb://localhost:27017/spamDetectionDB')
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error(err));
+// 🔥 SEED DATABASE ON STARTUP
+seedData();
 
-// Schema
-const CallLogSchema = new mongoose.Schema({
-  caller: String,
-  status: String,
-  timestamp: Number
-});
-const CallLog = mongoose.model('CallLog', CallLogSchema);
-
-// Routes
-app.post('/log', async (req, res) => {
-  const { caller, status } = req.body;
-  const log = new CallLog({ caller, status, timestamp: Date.now() });
-  await log.save();
-  res.json({ message: 'Log saved', log });
-});
-
-app.get('/logs', async (req, res) => {
-  const logs = await CallLog.find();
-  res.json(logs);
+// 🔥 HEALTH CHECK - PUBLIC
+app.get('/health', async (req, res) => {
+  try {
+    const [keywords, logs] = await Promise.all([
+      db.get('keywords'), 
+      db.get('logs')
+    ]);
+    res.json({ 
+      status: '✅ OK', 
+      keywords: keywords?.length || 0, 
+      logs: logs?.length || 0,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Health check failed' });
+  }
 });
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// 🔥 PUBLIC AUTH ROUTES
+app.post('/api/auth/register', authController.register);
+app.post('/api/auth/login', authController.login);
+
+// 🔥 PUBLIC LOG ROUTES - NO AUTH NEEDED FOR DASHBOARD TESTING
+app.get('/api/logs', logController.getAll);
+app.post('/api/logs/report', logController.addLog);  // 👈 Frontend calls this
+app.post('/api/logs', logController.addLog);         // 👈 Original endpoint
+
+// 🔥 PROTECTED ROUTES - KEEP AUTH
+app.get('/api/keywords', auth, keywordController.getAll);
+app.post('/api/keywords', auth, keywordController.addKeyword);
+app.delete('/api/purge-logs', auth, async (req, res) => {
+  try {
+    await db.set('logs', []);
+    res.json({ 
+      success: true, 
+      message: '🔐 Privacy purge complete! All logs deleted.' 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Purge failed' });
+  }
+});
+
+// 🔥 404 HANDLER
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Route not found', 
+    available: ['/health', '/api/logs', '/api/logs/report', '/api/auth/login'] 
+  });
+});
+
+// 🔥 ERROR HANDLER
+app.use((error, req, res, next) => {
+  console.error('🚨 Server Error:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+  });
+});
+
+const PORT = process.env.PORT || 5001;
+
+app.listen(PORT, () => {
+  console.log('🚀 VoxGuard API running on http://localhost:' + PORT);
+  console.log('✅ CORS enabled - Browser testing ready!');
+  console.log('🔍 Test endpoints:');
+  console.log('   GET  http://localhost:' + PORT + '/health');
+  console.log('   POST http://localhost:' + PORT + '/api/logs/report');
+  console.log('   GET  http://localhost:' + PORT + '/api/logs');
+});
