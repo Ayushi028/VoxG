@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-// 🔥 FIXED: Match your backend PORT 5001
+
 const API = axios.create({ 
-  baseURL: 'http://localhost:5000/api'  
+  baseURL: 'http://localhost:5001/api'  
 });
 
 API.interceptors.request.use(config => {
@@ -11,7 +11,7 @@ API.interceptors.request.use(config => {
   return config;
 });
 
-// 🔥 Response interceptor - DEBUG ALL CALLS
+
 API.interceptors.response.use(
   (response) => {
     console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url}: ${response.status}`);
@@ -34,7 +34,7 @@ export const api = {
   },
   logs: {
     getAll: () => API.get('/logs'),
-    // 🔥 FIXED: Use /logs/report endpoint + correct params
+   
     report: (callerId, transcript) => API.post('/logs/report', { callerId, transcript }),
     purge: () => API.delete('/purge-logs'),
   },
